@@ -1,0 +1,178 @@
+# ============================================
+# Dependencies
+# ============================================
+
+node_modules/
+jspm_packages/
+bower_components/
+.pnp
+.pnp.js
+
+# ============================================
+# Production Builds
+# ============================================
+
+dist/
+dist-ssr/
+build/
+out/
+.output/
+.vercel/
+.netlify/
+
+# ============================================
+# Cache & Temporary
+# ============================================
+
+.cache/
+.parcel-cache/
+.vite/
+.turbo/
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+
+# ============================================
+# Environment Variables
+# ============================================
+
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.production
+*.local
+
+# ============================================
+# Logs
+# ============================================
+
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ============================================
+# Testing
+# ============================================
+
+coverage/
+.nyc_output/
+*.lcov
+.coverage
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# ============================================
+# Runtime Data
+# ============================================
+
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# ============================================
+# Package Manager
+# ============================================
+
+# Optional: Uncomment to ignore lock files
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# ============================================
+# IDE / Editor
+# ============================================
+
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains
+.idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*.swn
+*~
+
+# Emacs
+*~
+\#*\#
+
+# Other
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ============================================
+# OS
+# ============================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ============================================
+# Vite Specific
+# ============================================
+
+# Vite cache
+.vite/
+vite.config.*.timestamp-*
+
+# ============================================
+# React Specific
+# ============================================
+
+# Storybook
+storybook-static/
+
+# Next.js (if migrating)
+.next/
+
+# ============================================
+# Temporary
+# ============================================
+
+*.tmp
+*.temp
+*.bak

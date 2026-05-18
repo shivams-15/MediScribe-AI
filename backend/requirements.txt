@@ -1,0 +1,23 @@
+# Core Framework
+fastapi==0.115.5
+uvicorn[standard]==0.34.0
+websockets==14.1
+python-multipart==0.0.20
+aiofiles==24.1.0
+
+# API Clients
+google-genai==1.22.0
+
+# NLP & ML (Python 3.12 compatible)
+spacy==3.7.6
+scispacy==0.5.5
+sentence-transformers==3.3.1
+
+# Data & Config
+pydantic==2.10.3
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+
+# Required by dependencies
+numpy>=1.26.0,<2.0.0
+scikit-learn==1.5.2
