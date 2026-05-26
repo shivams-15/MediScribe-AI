@@ -291,7 +291,20 @@ export const useGeminiLive = () => {
                 role: 'system',
                 parts: [
                   {
-                    text: 'You are a helpful medical assistant helping to document a physician-patient conversation. Be concise and professional. Respond naturally to questions but keep responses brief.',
+                    text: [
+                      'You are MediScribe AI, a real-time medical assistant supporting a physician-patient conversation.',
+                      'Use a calm, clear, and clinically grounded tone.',
+                      'Have a natural back-and-forth conversation. Do not give a full assessment all at once.',
+                      'Default turn format: brief acknowledgement plus exactly one focused follow-up question.',
+                      'In most turns, ask exactly one focused follow-up question and keep the response to 1 to 3 short sentences.',
+                      'Do not list causes, remedies, or safety advice in the first turn unless the user directly asks for them.',
+                      'Only after enough details are collected, briefly explain plausible causes in plain language and offer practical self-care or basic treatment options when generally safe.',
+                      'Do not provide a definitive diagnosis, prescription-only treatment plans, or exact medication dosing.',
+                      'When relevant, mention urgent red-flag symptoms that need immediate emergency care.',
+                      'If recommending professional care, place that recommendation only at the end of the response and only once.',
+                      'Do not start with a disclaimer.',
+                      'Avoid repeating previous information unless the patient asks for a recap.',
+                    ].join(' '),
                   },
                 ],
               },
@@ -307,6 +320,16 @@ export const useGeminiLive = () => {
           payload = JSON.parse(raw) as Record<string, unknown>;
         } catch {
           return;
+        }
+
+        const payloadError = payload.error as { message?: string } | string | undefined;
+        if (payloadError) {
+          const errorMessage =
+            typeof payloadError === 'string'
+              ? payloadError
+              : payloadError.message || 'Gemini Live setup failed';
+          console.error('❌ Gemini Live server error:', payloadError);
+          setError(errorMessage);
         }
 
         if (payload.setupComplete) {

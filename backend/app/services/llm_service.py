@@ -4,6 +4,7 @@ import json
 from typing import List, Dict, Optional, Any
 import uuid
 import asyncio
+import re
 from google import genai
 from google.genai import types
 
@@ -25,11 +26,122 @@ class LLMService:
             raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY not found in environment")
         
         self.client = genai.Client(api_key=self.api_key).aio
-        self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.model = model or os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+        model_fallbacks_raw = os.getenv(
+            "GEMINI_MODEL_FALLBACKS",
+            "gemini-2.0-flash,gemini-2.5-flash",
+        )
+        self.models = self._dedupe_preserve_order(
+            [self.model] + [m.strip() for m in model_fallbacks_raw.split(",") if m.strip()]
+        )
+        self.summary_model = os.getenv("GEMINI_SUMMARY_MODEL", "gemini-3.5-flash")
+        summary_fallbacks_raw = os.getenv(
+            "GEMINI_SUMMARY_MODEL_FALLBACKS",
+            "gemini-2.0-flash,gemini-2.5-flash",
+        )
+        self.summary_models = self._dedupe_preserve_order(
+            [self.summary_model] + [m.strip() for m in summary_fallbacks_raw.split(",") if m.strip()]
+        )
         self.temperature = float(os.getenv("TEMPERATURE", "0.7"))
         self.max_tokens = int(os.getenv("MAX_TOKENS", "2000"))
         
-        print(f"✅ LLM Service initialized with model: {self.model}")
+        print(
+            f"✅ LLM Service initialized with base model: {self.model}, "
+            f"summary model: {self.summary_model}"
+        )
+
+    @staticmethod
+    def _dedupe_preserve_order(items: List[str]) -> List[str]:
+        seen = set()
+        result = []
+        for item in items:
+            if item not in seen:
+                seen.add(item)
+                result.append(item)
+        return result
+
+    @staticmethod
+    def _is_quota_or_rate_limit_error(error: Exception) -> bool:
+        message = str(error)
+        upper_message = message.upper()
+        return (
+            "RESOURCE_EXHAUSTED" in upper_message
+            or "429" in message
+            or "RATE LIMIT" in upper_message
+            or "QUOTA" in upper_message
+        )
+
+    def _extract_balanced_json(self, text: str, start_idx: int) -> Optional[str]:
+        """Extract the first balanced JSON object/array from text starting at start_idx."""
+        if start_idx < 0 or start_idx >= len(text):
+            return None
+
+        opener = text[start_idx]
+        if opener not in "[{":
+            return None
+        closer = "}" if opener == "{" else "]"
+
+        depth = 0
+        in_string = False
+        escape = False
+
+        for i in range(start_idx, len(text)):
+            ch = text[i]
+
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+
+            if ch == '"':
+                in_string = True
+                continue
+
+            if ch == opener:
+                depth += 1
+            elif ch == closer:
+                depth -= 1
+                if depth == 0:
+                    return text[start_idx : i + 1]
+
+        return None
+
+    def _parse_json_response(self, content: str) -> Any:
+        """Parse model output robustly, handling markdown fences and wrapper text."""
+        cleaned = content.strip()
+        if not cleaned:
+            return None
+
+        # Remove common markdown code fences while preserving JSON body.
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        direct_candidates = [cleaned]
+        if cleaned.lower().startswith("json\n"):
+            direct_candidates.append(cleaned[5:].strip())
+
+        for candidate in direct_candidates:
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+        # Try extracting the first balanced JSON object/array from wrapper text.
+        starts = [idx for idx, ch in enumerate(cleaned) if ch in "[{"]
+        for idx in starts:
+            block = self._extract_balanced_json(cleaned, idx)
+            if not block:
+                continue
+            try:
+                return json.loads(block)
+            except json.JSONDecodeError:
+                continue
+
+        raise ValueError("Could not parse valid JSON from model response")
 
     async def _generate_json(
         self,
@@ -37,28 +149,59 @@ class LLMService:
         response_schema: Dict[str, Any],
         temperature: float,
         max_tokens: int,
+        model: Optional[str] = None,
     ) -> Any:
         """Generate structured JSON using Gemini with strict JSON response MIME type."""
-        response = await self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                response_mime_type="application/json",
-                response_json_schema=response_schema,
-            ),
-        )
+        candidate_models = [model] if model else self.models
+        if model and model == self.summary_model:
+            candidate_models = self.summary_models
 
-        if response.parsed is not None:
-            return response.parsed
+        last_error: Optional[Exception] = None
 
-        content = (response.text or "").strip()
-        if not content:
-            return None
+        for idx, candidate_model in enumerate(candidate_models):
+            try:
+                response = await self.client.models.generate_content(
+                    model=candidate_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                        temperature=temperature,
+                        max_output_tokens=max_tokens,
+                        response_mime_type="application/json",
+                        response_json_schema=response_schema,
+                    ),
+                )
 
-        return json.loads(content)
+                if response.parsed is not None:
+                    if candidate_model != self.model:
+                        print(f"✅ LLM request succeeded using fallback model: {candidate_model}")
+                    return response.parsed
+
+                content = (response.text or "").strip()
+                if not content:
+                    return None
+
+                parsed = self._parse_json_response(content)
+                if candidate_model != self.model:
+                    print(f"✅ LLM request succeeded using fallback model: {candidate_model}")
+                return parsed
+            except Exception as error:
+                last_error = error
+                can_retry_with_next_model = (
+                    idx < len(candidate_models) - 1 and self._is_quota_or_rate_limit_error(error)
+                )
+                if can_retry_with_next_model:
+                    next_model = candidate_models[idx + 1]
+                    print(
+                        f"⚠️ Model {candidate_model} hit quota/rate limit. "
+                        f"Retrying with {next_model}."
+                    )
+                    continue
+                raise
+
+        if last_error:
+            raise last_error
+        return None
     
     async def generate_questions(
         self,
@@ -210,6 +353,7 @@ class LLMService:
                 response_schema=summary_schema,
                 temperature=0.5,
                 max_tokens=1000,
+                model=self.summary_model,
             )
             if not isinstance(summary_data, dict):
                 return None
